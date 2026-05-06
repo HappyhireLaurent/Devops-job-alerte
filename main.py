@@ -22,9 +22,9 @@ def fetch_devops_jobs():
     }
     
     # On cherche les jobs postés dans les dernières 24h
-    params = {
+   params = {
         "query": "DevOps France",
-        "date_posted": "today",
+        "date_posted": "week",  # On passe de "today" à "week" pour tester
         "num_pages": "1"
     }
     
