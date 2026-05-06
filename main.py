@@ -28,7 +28,7 @@ def send_to_discord(jobs):
     for job in jobs[:10]:  # On prend les 10 plus pertinentes
         message += f"🔹 **{job['job_title']}** - {job['employer_name']}\n📍 {job['job_city']}, {job['job_country']}\n🔗 [Postuler ici]({job['job_apply_link']})\n\n"
     
-    requests.post(WEBHOOK_URL, json={"content": message})
+    requests.post(WEBHOOK_URL, json={"text": message})
 
 if __name__ == "__main__":
     jobs_list = fetch_devops_jobs()
