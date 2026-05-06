@@ -1,73 +1,61 @@
 import requests
 import os
 
-# Récupération des secrets configurés dans GitHub Actions
-# Note : On garde "DISCORD_WEBHOOK" car c'est le nom que tu as donné à ton secret GitHub
-RAPID_API_KEY = os.getenv("RAPID_API_KEY")
-WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
+# On récupère les variables d'environnement définies dans le fichier YAML
+API_KEY = os.getenv("RAPID_API_KEY")
+SLACK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
-def fetch_devops_jobs():
-    """Interroge l'API JSearch pour trouver les postes DevOps en France"""
+def fetch_jobs():
+    """Va chercher les offres DevOps en France sur la dernière semaine"""
     url = "https://jsearch.p.rapidapi.com/search"
     
-    # Requête ciblée : DevOps, France, publiés la semaine dernière
-    query = "DevOps, France"
-    
     headers = {
-        "X-RapidAPI-Key": RAPID_API_KEY,
+        "X-RapidAPI-Key": API_KEY,
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
     }
     
     params = {
-        "query": query,
-        "date_posted": "week", # Filtre sur la dernière semaine
+        "query": "DevOps, France",
+        "date_posted": "week",
         "num_pages": "1"
     }
     
+    print("📡 Recherche d'offres en cours...")
     try:
         response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status() # Vérifie si la requête a réussi
-        data = response.json()
-        return data.get('data', [])
+        response.raise_for_status()
+        return response.json().get('data', [])
     except Exception as e:
-        print(f"Erreur lors de la récupération des jobs : {e}")
+        print(f"❌ Erreur API : {e}")
         return []
 
 def send_to_slack(jobs):
-    """Formate et envoie la liste des jobs vers le Webhook Slack"""
+    """Envoie les résultats formatés sur Slack"""
     if not jobs:
-        message = "🔍 *Veille DevOps :* Aucune nouvelle offre trouvée cette semaine en France."
+        msg = "🔍 *Veille DevOps :* Aucune nouvelle offre trouvée cette semaine."
     else:
-        message = "🚀 *Nouvelles offres DevOps de la semaine en France :*\n\n"
-        
-        # On limite aux 10 premières offres pour ne pas saturer Slack
-        for job in jobs[:10]:
+        msg = "🚀 *Nouvelles offres DevOps en France (7 derniers jours) :*\n\n"
+        for job in jobs[:10]: # On limite à 10 pour la lisibilité
             title = job.get('job_title', 'Poste DevOps')
-            company = job.get('employer_name', 'Entreprise inconnue')
+            company = job.get('employer_name', 'Entreprise')
             city = job.get('job_city', 'France')
-            link = job.get('job_apply_link', '#')
+            url = job.get('job_apply_link', '#')
             
-            # Formatage Slack : *Gras*, _Italique_, <URL|Texte> pour les liens
-            message += f"🔹 *{title}* - {company}\n📍 {city}\n🔗 <{link}|Voir l'offre et postuler>\n\n"
+            # Formatage spécifique Slack : <URL|Texte>
+            msg += f"🔹 *{title}* - {company}\n📍 {city}\n🔗 <{url}|Postuler ici>\n\n"
 
-    # Envoi de la requête POST à Slack
     try:
-        payload = {"text": message}
-        response = requests.post(WEBHOOK_URL, json=payload)
-        
-        if response.status_code == 200:
-            print("✅ Message envoyé avec succès sur Slack !")
+        res = requests.post(SLACK_URL, json={"text": msg})
+        if res.status_code == 200:
+            print("✅ Succès ! Message envoyé sur Slack.")
         else:
-            print(f"❌ Échec de l'envoi (Code {response.status_code}) : {response.text}")
-            
+            print(f"⚠️ Slack a répondu avec l'erreur : {res.status_code}")
     except Exception as e:
-        print(f"Erreur lors de l'envoi vers Slack : {e}")
+        print(f"❌ Erreur d'envoi : {e}")
 
 if __name__ == "__main__":
-    # Vérification que les clés sont présentes
-    if not RAPID_API_KEY or not WEBHOOK_URL:
-        print("❌ Erreur : Les secrets RAPID_API_KEY ou DISCORD_WEBHOOK sont manquants dans GitHub.")
+    if not API_KEY or not SLACK_URL:
+        print("❌ Manquant : Vérifie tes secrets RAPID_API_KEY ou DISCORD_WEBHOOK sur GitHub.")
     else:
-        print("🛰️ Recherche des offres en cours...")
-        jobs_list = fetch_devops_jobs()
-        send_to_slack(jobs_list)
+        offres = fetch_jobs()
+        send_to_slack(offres)
