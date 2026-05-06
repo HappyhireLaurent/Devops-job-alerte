@@ -1,28 +1,22 @@
-name: Veille DevOps Slack
+name: Veille DevOps Quotidienne (12h - 18h)
 
 on:
   schedule:
-    - cron: '0 9 * * 1' # Tous les lundis à 9h00 UTC (10h ou 11h en France selon l'heure d'été)
-  workflow_dispatch:   # Ce bouton te permet de tester manuellement quand tu veux
+    # 10:00 UTC = 12:00 France | 16:00 UTC = 18:00 France
+    - cron: '0 10,16 * * *'
+  workflow_dispatch: # Pour tester manuellement
 
 jobs:
   run_bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Récupération du code
-        uses: actions/checkout@v4
-
-      - name: Installation de Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
-      - name: Installation des dépendances
-        run: pip install requests
-
+      - run: pip install requests
       - name: Exécution de l'agent
         env:
-          # On utilise tes secrets GitHub pour la sécurité
           RAPID_API_KEY: ${{ secrets.RAPID_API_KEY }}
-          SLACK_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }} # On garde ce nom de secret pour t'éviter de le changer sur GitHub
+          SLACK_URL: ${{ secrets.DISCORD_WEBHOOK }}
         run: python main.py
