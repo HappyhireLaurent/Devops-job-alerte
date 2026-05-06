@@ -1,27 +1,28 @@
-name: Weekly DevOps Job Alert
+name: Veille DevOps Slack
 
 on:
   schedule:
-    - cron: '0 9 * * 1' # Tous les lundis à 9h00 UTC
-  workflow_dispatch:   # Permet de le lancer manuellement
+    - cron: '0 9 * * 1' # Tous les lundis à 9h00 UTC (10h ou 11h en France selon l'heure d'été)
+  workflow_dispatch:   # Ce bouton te permet de tester manuellement quand tu veux
 
 jobs:
-  build:
+  run_bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Récupération du code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Installation de Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
+      - name: Installation des dépendances
         run: pip install requests
 
-      - name: Run scraper
+      - name: Exécution de l'agent
         env:
+          # On utilise tes secrets GitHub pour la sécurité
           RAPID_API_KEY: ${{ secrets.RAPID_API_KEY }}
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          SLACK_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }} # On garde ce nom de secret pour t'éviter de le changer sur GitHub
         run: python main.py
