@@ -5,20 +5,22 @@ import pandas as pd
 API_KEY = os.getenv("RAPID_API_KEY")
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 
-# On réduit la blacklist au strict minimum pour le test
+# Blacklist réduite pour ne pas tout bloquer au début
 BLACKLIST = ["Alten", "Capgemini", "Sopra Steria"] 
 
 def fetch_jobs():
     url = "https://jsearch.p.rapidapi.com/search"
     headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
     
+    # REQUÊTE ÉLARGIE
     params = {
-        "query": "DevOps France", # Requête simple
+        "query": "DevOps", # On cherche juste DevOps
+        "location": "France", # On précise le lieu ici
         "date_posted": "all",
-        "num_pages": "1"
+        "num_pages": "2" # On demande 2 pages (plus de résultats)
     }
     
-    print("📡 Connexion à l'API...")
+    print("📡 Recherche en cours...")
     try:
         response = requests.get(url, headers=headers, params=params)
         data = response.json().get('data', [])
@@ -36,15 +38,14 @@ def run():
         company = job.get('employer_name', 'Inconnu')
         title = job.get('job_title', '')
         
-        # Nettoyage pour la comparaison
+        # On ignore la casse (MAJ/min) pour ne rien rater
         title_lower = title.lower()
         company_lower = company.lower()
         
-        # Logique de filtrage
         is_esn = any(esn.lower() in company_lower for esn in BLACKLIST)
-        is_devops = "devops" in title_lower
         
-        if is_devops and not is_esn:
+        # Filtre souple : si "devops" est dans le titre OU le métier
+        if "devops" in title_lower and not is_esn:
             filtered_data.append({
                 "Poste": title,
                 "Entreprise": company,
@@ -52,26 +53,22 @@ def run():
                 "Source": job.get('job_publisher', 'N/A'),
                 "Date": job.get('job_posted_at_datetime_utc', 'N/A')[:10]
             })
-        else:
-            # On affiche dans les logs pourquoi on rejette l'offre
-            reason = "Pas DevOps" if not is_devops else "C'est une ESN"
-            print(f"Skipped: {title} chez {company} ({reason})")
 
     if not filtered_data:
-        print("⚠️ Toujours aucune offre après filtrage.")
-        # On envoie quand même un message à Discord pour dire que le bot est vivant
-        requests.post(WEBHOOK_URL, json={"content": "🤖 Bot actif, mais 0 offre trouvée avec les filtres actuels."})
+        print("⚠️ Toujours 0 après filtrage.")
+        requests.post(WEBHOOK_URL, json={"content": "🤖 Toujours rien. Je vais élargir encore plus la recherche."})
         return
 
+    # Création du CSV
     df = pd.DataFrame(filtered_data)
     filename = "offres_devops.csv"
     df.to_csv(filename, index=False, encoding='utf-8-sig')
 
-    print(f"📤 Envoi de {len(filtered_data)} offres vers Discord...")
+    print(f"📤 Envoi de {len(filtered_data)} offres...")
     with open(filename, "rb") as f:
         requests.post(
             WEBHOOK_URL,
-            data={"content": f"🚀 Rapport DevOps : {len(filtered_data)} offres trouvées !"},
+            data={"content": f"✅ Succès ! J'ai trouvé {len(filtered_data)} offres DevOps en France."},
             files={"file": (filename, f)}
         )
 
