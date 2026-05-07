@@ -2,52 +2,62 @@ import requests
 import os
 import pandas as pd
 
+# CONFIGURATION
 API_KEY = os.getenv("RAPID_API_KEY")
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 
-def run():
+# --- BLACKLIST ---
+BLACKLIST = ["Alten", "Altran", "Capgemini", "Sopra Steria", "CGI", "Atos", "Inetum", "Akkodis", "Michael Page", "Hays", "Robert Half", "Expectra", "Talan", "Devoteam", "Orange Business", "Manpower", "Adecco", "Randstad", "Econocom"]
+
+def fetch_devops_jobs():
     url = "https://jsearch.p.rapidapi.com/search"
-    headers = {
-        "X-RapidAPI-Key": API_KEY,
-        "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
+    headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
+    
+    params = {
+        "query": "DevOps France",
+        "date_posted": "week", # On prend toutes les offres de la semaine passée
+        "num_pages": "3"      # On augmente à 3 pages (environ 120 offres analysées)
     }
     
-    # TEST 1 : On cherche un terme universel (Python) pour voir si l'API répond
-    params = {"query": "Python", "num_pages": "1"}
-    
-    print("📡 Tentative de connexion à l'API...")
     try:
         response = requests.get(url, headers=headers, params=params)
-        
-        # On envoie le code de réponse à Discord pour savoir ce qui se passe
-        requests.post(WEBHOOK_URL, json={"content": f"📡 Status Code API : {response.status_code}"})
-        
-        data = response.json().get('data', [])
-        
-        if not data:
-            # Si c'est vide, on essaie une recherche encore plus simple
-            requests.post(WEBHOOK_URL, json={"content": "⚠️ L'API a répondu mais la liste est VIDE. Je tente une recherche mondiale..."})
-            params = {"query": "Developer", "num_pages": "1"}
-            response = requests.get(url, headers=headers, params=params)
-            data = response.json().get('data', [])
+        return response.json().get('data', [])
+    except:
+        return []
 
-        if data:
-            # Si on a des données, on crée le fichier SANS AUCUN FILTRE
-            df = pd.DataFrame(data)
-            filename = "offres_test.csv"
-            df.to_csv(filename, index=False, encoding='utf-8-sig')
-            
-            with open(filename, "rb") as f:
-                requests.post(
-                    WEBHOOK_URL, 
-                    data={"content": f"✅ SUCCÈS ! J'ai trouvé {len(data)} offres sans aucun filtre."},
-                    files={"file": (filename, f)}
-                )
-        else:
-            requests.post(WEBHOOK_URL, json={"content": "❌ Même avec 'Developer', l'API ne renvoie rien. Ta clé API a un problème d'activation chez RapidAPI."})
+def run():
+    raw_jobs = fetch_devops_jobs()
+    filtered_data = []
 
-    except Exception as e:
-        requests.post(WEBHOOK_URL, json={"content": f"💥 Erreur fatale : {str(e)}"})
+    for job in raw_jobs:
+        company = job.get('employer_name', 'Inconnu')
+        title = job.get('job_title', '').lower()
+        is_esn = any(esn.lower() in company.lower() for esn in BLACKLIST)
+        
+        if "devops" in title and not is_esn:
+            filtered_data.append({
+                "Nom du Poste": job.get('job_title'),
+                "Entreprise": company,
+                "Lien Postuler": job.get('job_apply_link'),
+                "Source": job.get('job_publisher', 'N/A'),
+                "Ville": job.get('job_city', 'France'),
+                "Date": job.get('job_posted_at_datetime_utc', 'N/A')[:10]
+            })
+
+    if not filtered_data:
+        requests.post(WEBHOOK_URL, json={"content": "✅ Veille Hebdo : Aucune offre trouvée cette semaine."})
+        return
+
+    df = pd.DataFrame(filtered_data)
+    filename = "veille_hebdo_devops.csv"
+    df.to_csv(filename, index=False, encoding='utf-8-sig')
+
+    with open(filename, "rb") as f:
+        requests.post(
+            WEBHOOK_URL,
+            data={"content": f"📅 **Rapport Hebdomadaire DevOps**\nVoici les {len(filtered_data)} offres détectées cette semaine (Hors ESN)."},
+            files={"file": (filename, f)}
+        )
 
 if __name__ == "__main__":
     run()
