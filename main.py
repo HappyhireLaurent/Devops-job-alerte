@@ -2,33 +2,30 @@ import requests
 import os
 import pandas as pd
 
-# CONFIGURATION
 API_KEY = os.getenv("RAPID_API_KEY")
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 
-# Liste noire des ESN et cabinets (à compléter)
-BLACKLIST = [
-    "Alten", "Altran", "Capgemini", "Sopra Steria", "CGI", "Atos", "Inetum", 
-    "Akkodis", "Michael Page", "Hays", "Robert Half", "Expectra", "Talan", 
-    "Devoteam", "Orange Business", "Manpower", "Adecco", "Randstad", "Econocom"
-]
+# On réduit la blacklist au strict minimum pour le test
+BLACKLIST = ["Alten", "Capgemini", "Sopra Steria"] 
 
 def fetch_jobs():
     url = "https://jsearch.p.rapidapi.com/search"
     headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
     
-    # On ratisse large pour avoir du résultat
     params = {
-        "query": "DevOps France",
-        "date_posted": "all", # Pas de limite de temps
-        "num_pages": "2"      # On prend environ 80 offres
+        "query": "DevOps France", # Requête simple
+        "date_posted": "all",
+        "num_pages": "1"
     }
     
-    print("📡 Recherche des offres sur les jobboards...")
+    print("📡 Connexion à l'API...")
     try:
         response = requests.get(url, headers=headers, params=params)
-        return response.json().get('data', [])
-    except:
+        data = response.json().get('data', [])
+        print(f"✅ L'API a trouvé {len(data)} offres brutes.")
+        return data
+    except Exception as e:
+        print(f"❌ Erreur API : {e}")
         return []
 
 def run():
@@ -37,40 +34,46 @@ def run():
 
     for job in raw_jobs:
         company = job.get('employer_name', 'Inconnu')
-        title = job.get('job_title', '').lower()
+        title = job.get('job_title', '')
         
-        # Filtres : Titre contient DevOps + Pas une ESN
-        is_esn = any(esn.lower() in company.lower() for esn in BLACKLIST)
-        if "devops" in title and not is_esn:
+        # Nettoyage pour la comparaison
+        title_lower = title.lower()
+        company_lower = company.lower()
+        
+        # Logique de filtrage
+        is_esn = any(esn.lower() in company_lower for esn in BLACKLIST)
+        is_devops = "devops" in title_lower
+        
+        if is_devops and not is_esn:
             filtered_data.append({
-                "Poste": job.get('job_title'),
+                "Poste": title,
                 "Entreprise": company,
                 "Lien": job.get('job_apply_link'),
                 "Source": job.get('job_publisher', 'N/A'),
                 "Date": job.get('job_posted_at_datetime_utc', 'N/A')[:10]
             })
+        else:
+            # On affiche dans les logs pourquoi on rejette l'offre
+            reason = "Pas DevOps" if not is_devops else "C'est une ESN"
+            print(f"Skipped: {title} chez {company} ({reason})")
 
     if not filtered_data:
-        print("⚠️ Aucune offre trouvée.")
+        print("⚠️ Toujours aucune offre après filtrage.")
+        # On envoie quand même un message à Discord pour dire que le bot est vivant
+        requests.post(WEBHOOK_URL, json={"content": "🤖 Bot actif, mais 0 offre trouvée avec les filtres actuels."})
         return
 
-    # Création du fichier CSV
     df = pd.DataFrame(filtered_data)
     filename = "offres_devops.csv"
     df.to_csv(filename, index=False, encoding='utf-8-sig')
 
-    # Envoi vers Discord
-    print(f"📤 Envoi du fichier ({len(filtered_data)} offres) vers Discord...")
+    print(f"📤 Envoi de {len(filtered_data)} offres vers Discord...")
     with open(filename, "rb") as f:
         requests.post(
             WEBHOOK_URL,
-            data={"content": f"🚀 Voici ton rapport DevOps quotidien ! ({len(filtered_data)} offres trouvées)"},
+            data={"content": f"🚀 Rapport DevOps : {len(filtered_data)} offres trouvées !"},
             files={"file": (filename, f)}
         )
-    print("✨ Terminé !")
 
 if __name__ == "__main__":
-    if not API_KEY or not WEBHOOK_URL:
-        print("❌ Secrets manquants.")
-    else:
-        run()
+    run()
