@@ -1,62 +1,76 @@
 import requests
 import os
+import pandas as pd
 
+# CONFIGURATION
 API_KEY = os.getenv("RAPID_API_KEY")
-SLACK_URL = os.getenv("SLACK_URL")
+WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 
-BLACKLIST = ["Alten", "Altran", "Capgemini", "Sopra Steria", "CGI", "Atos", "Inetum", "Akkodis", "Michael Page", "Hays", "Robert Half", "Expectra", "Webhelp", "Talan", "Devoteam", "Orange Business"]
+# Liste noire des ESN et cabinets (à compléter)
+BLACKLIST = [
+    "Alten", "Altran", "Capgemini", "Sopra Steria", "CGI", "Atos", "Inetum", 
+    "Akkodis", "Michael Page", "Hays", "Robert Half", "Expectra", "Talan", 
+    "Devoteam", "Orange Business", "Manpower", "Adecco", "Randstad", "Econocom"
+]
 
-def fetch_devops_jobs():
+def fetch_jobs():
     url = "https://jsearch.p.rapidapi.com/search"
     headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
     
-    # On élargit la recherche pour être sûr de capter des résultats
+    # On ratisse large pour avoir du résultat
     params = {
-        "query": "DevOps", 
-        "location": "France",
-        "date_posted": "all", # On met "all" pour le test, on repassera à "today" après
-        "num_pages": "1"
+        "query": "DevOps France",
+        "date_posted": "all", # Pas de limite de temps
+        "num_pages": "2"      # On prend environ 80 offres
     }
     
-    print(f"📡 Requête API avec les paramètres : {params}")
+    print("📡 Recherche des offres sur les jobboards...")
     try:
         response = requests.get(url, headers=headers, params=params)
-        data = response.json().get('data', [])
-        print(f"✅ Nombre d'offres brutes trouvées par l'API : {len(data)}")
-        return data
-    except Exception as e:
-        print(f"❌ Erreur lors de l'appel API : {e}")
+        return response.json().get('data', [])
+    except:
         return []
 
-def send_to_slack(jobs):
-    count = 0
-    for job in jobs:
-        company = job.get('employer_name', 'N/A')
+def run():
+    raw_jobs = fetch_jobs()
+    filtered_data = []
+
+    for job in raw_jobs:
+        company = job.get('employer_name', 'Inconnu')
         title = job.get('job_title', '').lower()
         
-        # Filtrage
+        # Filtres : Titre contient DevOps + Pas une ESN
         is_esn = any(esn.lower() in company.lower() for esn in BLACKLIST)
-        
-        # On vérifie si "devops" est dans le titre OU dans la description
         if "devops" in title and not is_esn:
-            link = job.get('job_apply_link', '#')
-            publisher = job.get('job_publisher', 'Direct') 
-            
-            message = (
-                f"🎯 *Opportunité détectée*\n"
-                f"• *Poste :* {job.get('job_title')}\n"
-                f"• *Entreprise :* {company}\n"
-                f"• *Source :* {publisher}\n"
-                f"• *Lien :* <{link}|Voir l'offre>"
-            )
-            requests.post(SLACK_URL, json={"text": message})
-            count += 1
-    
-    print(f"📤 {count} offres filtrées envoyées sur Slack.")
+            filtered_data.append({
+                "Poste": job.get('job_title'),
+                "Entreprise": company,
+                "Lien": job.get('job_apply_link'),
+                "Source": job.get('job_publisher', 'N/A'),
+                "Date": job.get('job_posted_at_datetime_utc', 'N/A')[:10]
+            })
+
+    if not filtered_data:
+        print("⚠️ Aucune offre trouvée.")
+        return
+
+    # Création du fichier CSV
+    df = pd.DataFrame(filtered_data)
+    filename = "offres_devops.csv"
+    df.to_csv(filename, index=False, encoding='utf-8-sig')
+
+    # Envoi vers Discord
+    print(f"📤 Envoi du fichier ({len(filtered_data)} offres) vers Discord...")
+    with open(filename, "rb") as f:
+        requests.post(
+            WEBHOOK_URL,
+            data={"content": f"🚀 Voici ton rapport DevOps quotidien ! ({len(filtered_data)} offres trouvées)"},
+            files={"file": (filename, f)}
+        )
+    print("✨ Terminé !")
 
 if __name__ == "__main__":
-    if not API_KEY or not SLACK_URL:
-        print("❌ Secrets manquants !")
+    if not API_KEY or not WEBHOOK_URL:
+        print("❌ Secrets manquants.")
     else:
-        all_jobs = fetch_devops_jobs()
-        send_to_slack(all_jobs)
+        run()
