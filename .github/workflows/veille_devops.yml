@@ -1,13 +1,9 @@
 name: Veille DevOps France 🔍
 
 on:
-  # Tous les lundis à 7h00 heure de Paris (6h UTC en hiver, 5h UTC en été)
-  # On met 6h UTC pour couvrir les deux saisons
   schedule:
-    - cron: "0 6 * * 1"
-
-  # Permet de lancer manuellement depuis l'onglet Actions (pour tester)
-  workflow_dispatch:
+    - cron: "0 6 * * 1"   # Tous les lundis à 7h Paris (6h UTC)
+  workflow_dispatch:        # Lancement manuel depuis l'onglet Actions
 
 jobs:
   scrape-and-send:
@@ -24,10 +20,11 @@ jobs:
           python-version: "3.11"
 
       - name: 📦 Installation des dépendances
-        run: |
-          pip install feedparser requests
+        run: pip install requests
 
       - name: 🔍 Lancement de la veille
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          FT_CLIENT_ID:     ${{ secrets.FT_CLIENT_ID }}
+          FT_CLIENT_SECRET: ${{ secrets.FT_CLIENT_SECRET }}
+          DISCORD_WEBHOOK:  ${{ secrets.DISCORD_WEBHOOK }}
         run: python main.py
