@@ -6,8 +6,12 @@ import pandas as pd
 API_KEY = os.getenv("RAPID_API_KEY")
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 
-# Blacklist ESN / Cabinets (Tu peux l'allonger ici)
-BLACKLIST = ["Alten", "Capgemini", "Sopra Steria", "CGI", "Atos", "Inetum", "Akkodis", "Michael Page", "Hays", "Robert Half", "Expectra"]
+# Blacklist ESN / Cabinets étendue
+BLACKLIST = [
+    "Alten", "Capgemini", "Sopra Steria", "CGI", "Atos", "Inetum", 
+    "Akkodis", "Michael Page", "Hays", "Robert Half", "Expectra", 
+    "Talan", "Devoteam", "Manpower", "Adecco"
+]
 
 def fetch_jobs():
     url = "https://jsearch.p.rapidapi.com/search"
@@ -16,18 +20,21 @@ def fetch_jobs():
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
     }
     
-    # REQUÊTE : Juste "DevOps", aucune localisation
+    # On construit une requête qui inclut tes mots-clés et tes villes cibles
+    # L'API performe mieux quand on lui donne une intention claire
+    search_query = "DevOps Cloud Infrastructure Développeur France Paris Rennes Lyon Nantes"
+    
     params = {
-        "query": "DevOps",
+        "query": search_query,
         "date_posted": "all",
-        "num_pages": "3" # On scanne 3 pages pour avoir un maximum d'offres
+        "num_pages": "3" 
     }
     
-    print("📡 Recherche globale DevOps en cours...")
+    print(f"📡 Recherche en cours pour : {search_query}")
     try:
         response = requests.get(url, headers=headers, params=params)
         data = response.json().get('data', [])
-        print(f"✅ Offres brutes trouvées par l'API : {len(data)}")
+        print(f"✅ Offres brutes trouvées : {len(data)}")
         return data
     except Exception as e:
         print(f"❌ Erreur API : {e}")
@@ -38,6 +45,9 @@ def run():
     filtered_data = []
     seen_links = set()
 
+    # Mots-clés pour le filtrage du titre
+    target_keywords = ["devops", "cloud", "infrastructure", "développeur", "developpeur", "developer", "infra"]
+
     for job in raw_jobs:
         company = job.get('employer_name', 'Inconnu')
         title = job.get('job_title', '').lower()
@@ -47,38 +57,42 @@ def run():
             continue
 
         # FILTRAGE
+        # 1. On ignore si c'est une ESN
         is_esn = any(esn.lower() in company.lower() for esn in BLACKLIST)
         
-        # On garde tout ce qui contient "devops" et qui n'est pas une ESN
-        if "devops" in title and not is_esn:
+        # 2. On vérifie si un des mots-clés est dans le titre
+        match_keyword = any(kw in title for kw in target_keywords)
+        
+        if match_keyword and not is_esn:
             if link not in seen_links:
                 seen_links.add(link)
-                # STRUCTURE : Entreprise | Lien URL
+                # STRUCTURE : Colonne A (Entreprise), Colonne B (Lien URL)
                 filtered_data.append({
                     "Entreprise": company,
                     "Lien URL": link
                 })
 
     if not filtered_data:
-        # Message de secours si le filtre est trop fort
-        msg = f"⚠️ 0 offre filtrée. L'API a pourtant trouvé {len(raw_jobs)} offres brutes."
+        msg = f"⚠️ Filtre trop strict : {len(raw_jobs)} offres brutes mais 0 retenues."
         requests.post(WEBHOOK_URL, json={"content": msg})
         return
 
-    # Création du CSV avec 2 colonnes
-    df = pd.DataFrame(filtered_data)[["Entreprise", "Lien URL"]]
+    # Création du CSV (A: Entreprise, B: Lien)
+    df = pd.DataFrame(filtered_data)
+    df = df[["Entreprise", "Lien URL"]]
     
-    filename = "offres_devops_mondial.csv"
+    filename = "veille_tech_ciblee.csv"
+    # utf-8-sig est crucial pour que Rennes et Développeur s'affichent bien dans Excel
     df.to_csv(filename, index=False, encoding='utf-8-sig')
 
     # Envoi vers Discord
     with open(filename, "rb") as f:
         requests.post(
             WEBHOOK_URL,
-            data={"content": f"🌍 **Rapport DevOps Global** : {len(filtered_data)} offres trouvées (Sans localisation)."},
+            data={"content": f"📍 **Veille Tech (France/Villes Clés)** : {len(filtered_data)} offres trouvées."},
             files={"file": (filename, f)}
         )
-    print("✨ Envoi terminé.")
+    print(f"✨ Terminé : {len(filtered_data)} offres envoyées.")
 
 if __name__ == "__main__":
     run()
