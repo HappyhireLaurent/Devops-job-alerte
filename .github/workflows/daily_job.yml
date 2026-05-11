@@ -2,10 +2,8 @@ name: Veille DevOps Hebdomadaire (Lundi 9h)
 
 on:
   schedule:
-    # 07:00 UTC = 09:00 France (Heure d'été)
-    # Le '1' à la fin signifie Lundi (Monday)
-    - cron: '0 7 * * 1'
-  workflow_dispatch:   # Indispensable pour ton premier lancement manuel
+    - cron: '0 7 * * 1' # Lundi 9h France
+  workflow_dispatch:   # Pour tester tout de suite
 
 jobs:
   run_bot:
