@@ -68,7 +68,7 @@ def get_token() -> str:
             "grant_type":    "client_credentials",
             "client_id":     FT_CLIENT_ID,
             "client_secret": FT_CLIENT_SECRET,
-            "scope":         "Open Formation",
+            "scope":         "api_offresdemploiv2",
         },
         timeout=15,
     )
