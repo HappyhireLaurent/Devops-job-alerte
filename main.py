@@ -86,7 +86,6 @@ def search_jobs(token: str, query: str) -> list[dict]:
     }
     params = {
         "motsCles":      query,
-        "typeContrat":   "CDI,CDD",
         "publieeDepuis": 7,
         "range":         "0-149",
     }
@@ -94,12 +93,10 @@ def search_jobs(token: str, query: str) -> list[dict]:
         resp = requests.get(FT_SEARCH_URL, headers=headers, params=params, timeout=20)
         print(f"  HTTP {resp.status_code} pour '{query}'")
 
-        # 206 = résultats partiels (normal), 200 = tous les résultats
         if resp.status_code in (200, 206):
             offres = resp.json().get("resultats", [])
             print(f"  → {len(offres)} offres")
             return offres
-        # 204 = aucun résultat (normal)
         elif resp.status_code == 204:
             print("  → Aucune offre")
             return []
@@ -116,7 +113,7 @@ def collect_all_jobs(token: str) -> list[dict]:
         print(f"\n📡 Recherche : {query}")
         jobs = search_jobs(token, query)
         all_jobs.extend(jobs)
-        time.sleep(1)  # Respect du rate limit
+        time.sleep(1)
     print(f"\n📊 Total brut : {len(all_jobs)} offres récupérées")
     return all_jobs
 
@@ -190,11 +187,14 @@ def send_to_discord(jobs: list[dict], total_raw: int):
         requests.post(DISCORD_WEBHOOK, json={"content": msg})
         return
 
+    # CSV avec séparateur ";" et directive "sep=;" pour Excel FR
     output = StringIO()
-writer = csv.DictWriter(output, fieldnames=["Entreprise", "Lien URL"], delimiter=";")
-writer.writeheader()
-writer.writerows(jobs)
-csv_bytes = ("sep=;\n" + output.getvalue()).encode("utf-8-sig")
+    writer = csv.DictWriter(output, fieldnames=["Entreprise", "Lien URL"], delimiter=";")
+    writer.writeheader()
+    writer.writerows(jobs)
+    # "sep=;" en première ligne indique à Excel le séparateur à utiliser
+    csv_content = "sep=;\n" + output.getvalue()
+    csv_bytes = csv_content.encode("utf-8-sig")
 
     filename = f"veille_devops_{datetime.now().strftime('%Y-%m-%d')}.csv"
     content  = (
