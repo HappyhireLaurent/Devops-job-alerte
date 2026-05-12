@@ -13,29 +13,27 @@ FT_CLIENT_ID     = os.getenv("FT_CLIENT_ID")
 FT_CLIENT_SECRET = os.getenv("FT_CLIENT_SECRET")
 DISCORD_WEBHOOK  = os.getenv("DISCORD_WEBHOOK")
 
-FT_TOKEN_URL = (
-    "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
-    "?realm=%2Fpartenaire"
-)
-FT_SEARCH_URL = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres"
+FT_TOKEN_URL  = "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=%2Fpartenaire"
+FT_SEARCH_URL = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
 
-# Mots-clés recherchés (envoyés un par un à l'API)
+# Mots-clés envoyés un par un à l'API
 SEARCH_QUERIES = [
     "DevOps",
-    "SRE site reliability engineer",
-    "Cloud engineer",
-    "Ingénieur infrastructure cloud",
-    "Platform engineer",
-    "Développeur backend",
-    "Développeur fullstack",
-    "Kubernetes Terraform",
+    "SRE",
+    "cloud engineer",
+    "infrastructure cloud",
+    "platform engineer",
+    "backend",
+    "fullstack",
+    "Kubernetes",
+    "Terraform",
 ]
 
-# Mots-clés pour filtrer les titres côté script (filet de sécurité)
+# Filtre local sur les titres (filet de sécurité)
 TARGET_KEYWORDS = [
     "devops", "sre", "site reliability",
     "cloud", "infra", "infrastructure",
-    "platform engineer", "platform engineering",
+    "platform engineer",
     "backend", "back-end",
     "fullstack", "full stack", "full-stack",
     "kubernetes", "k8s", "terraform", "ansible",
@@ -59,7 +57,6 @@ BLACKLIST = [
 # ──────────────────────────────────────────────
 
 def get_token() -> str:
-    """Récupère un token OAuth2 France Travail."""
     print("🔑 Récupération du token OAuth2...")
     resp = requests.post(
         FT_TOKEN_URL,
@@ -73,57 +70,53 @@ def get_token() -> str:
         timeout=15,
     )
     if resp.status_code != 200:
-        raise RuntimeError(f"Échec authentification : {resp.status_code} — {resp.text[:300]}")
-
+        raise RuntimeError(f"Échec auth : {resp.status_code} — {resp.text[:300]}")
     token = resp.json().get("access_token")
     print("  ✅ Token obtenu")
     return token
 
 # ──────────────────────────────────────────────
-# RECHERCHE D'OFFRES
+# RECHERCHE
 # ──────────────────────────────────────────────
 
 def search_jobs(token: str, query: str) -> list[dict]:
-    """Appelle l'API France Travail pour une requête donnée."""
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept":        "application/json",
     }
     params = {
-        "motsCles":        query,
-        "typeContrat":     "CDI,CDD",   # CDI et CDD uniquement
-        "publieeDepuis":   7,            # Offres des 7 derniers jours
-        "range":           "0-149",      # Max 150 résultats par appel
+        "motsCles":      query,
+        "typeContrat":   "CDI,CDD",
+        "publieeDepuis": 7,
+        "range":         "0-149",
     }
-
     try:
-        resp = requests.get(FT_SEARCH_URL, headers=headers, params=params, timeout=15)
+        resp = requests.get(FT_SEARCH_URL, headers=headers, params=params, timeout=20)
         print(f"  HTTP {resp.status_code} pour '{query}'")
 
-        if resp.status_code == 206 or resp.status_code == 200:
-            data = resp.json()
-            offres = data.get("resultats", [])
-            print(f"  → {len(offres)} offres brutes")
+        # 206 = résultats partiels (normal), 200 = tous les résultats
+        if resp.status_code in (200, 206):
+            offres = resp.json().get("resultats", [])
+            print(f"  → {len(offres)} offres")
             return offres
+        # 204 = aucun résultat (normal)
         elif resp.status_code == 204:
-            print("  → Aucune offre (204 No Content)")
+            print("  → Aucune offre")
             return []
         else:
-            print(f"  ⚠️  Erreur : {resp.text[:200]}")
+            print(f"  ⚠️  Erreur : {resp.text[:300]}")
             return []
     except Exception as e:
         print(f"  ❌ Exception : {e}")
         return []
 
 def collect_all_jobs(token: str) -> list[dict]:
-    """Lance toutes les requêtes et agrège les résultats."""
     all_jobs = []
     for query in SEARCH_QUERIES:
         print(f"\n📡 Recherche : {query}")
         jobs = search_jobs(token, query)
         all_jobs.extend(jobs)
-        time.sleep(1)  # Pause pour respecter le rate limit de l'API
-
+        time.sleep(1)  # Respect du rate limit
     print(f"\n📊 Total brut : {len(all_jobs)} offres récupérées")
     return all_jobs
 
@@ -140,31 +133,25 @@ def matches_target(title: str) -> bool:
     return any(kw in t for kw in TARGET_KEYWORDS)
 
 def filter_jobs(raw_jobs: list[dict]) -> list[dict]:
-    filtered   = []
-    seen_ids   = set()
+    filtered  = []
+    seen_ids  = set()
     stats = {"blacklist": 0, "no_keyword": 0, "duplicate": 0, "kept": 0}
 
     for job in raw_jobs:
-        job_id    = job.get("id", "")
-        title     = job.get("intitule", "")
-        company   = job.get("entreprise", {}).get("nom", "Inconnu")
-        # L'API France Travail fournit l'URL de l'offre directement
-        url       = job.get("origineOffre", {}).get("urlOrigine", "")
+        job_id  = job.get("id", "")
+        title   = job.get("intitule", "")
+        company = job.get("entreprise", {}).get("nom", "Inconnu")
+        url     = job.get("origineOffre", {}).get("urlOrigine", "")
         if not url:
             url = f"https://candidat.francetravail.fr/offres/recherche/detail/{job_id}"
 
-        # Dédoublonnage par ID
         if job_id in seen_ids:
             stats["duplicate"] += 1
             continue
-
-        # Filtre blacklist
         if is_blacklisted(company) or is_blacklisted(title):
             stats["blacklist"] += 1
             print(f"  ❌ Blacklisté : {company} | {title}")
             continue
-
-        # Filtre mots-clés (filet de sécurité)
         if not matches_target(title):
             stats["no_keyword"] += 1
             print(f"  ⚪ Hors scope  : {title}")
@@ -203,12 +190,11 @@ def send_to_discord(jobs: list[dict], total_raw: int):
         requests.post(DISCORD_WEBHOOK, json={"content": msg})
         return
 
-    # CSV en mémoire
-    output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=["Entreprise", "Lien URL"])
+    output    = StringIO()
+    writer    = csv.DictWriter(output, fieldnames=["Entreprise", "Lien URL"])
     writer.writeheader()
     writer.writerows(jobs)
-    csv_bytes = output.getvalue().encode("utf-8-sig")  # BOM pour Excel FR
+    csv_bytes = output.getvalue().encode("utf-8-sig")
 
     filename = f"veille_devops_{datetime.now().strftime('%Y-%m-%d')}.csv"
     content  = (
@@ -216,7 +202,6 @@ def send_to_discord(jobs: list[dict], total_raw: int):
         f"✅ **{len(jobs)} offres** retenues (hors ESN/cabinets)\n"
         f"Source : France Travail (officiel)"
     )
-
     resp = requests.post(
         DISCORD_WEBHOOK,
         data={"content": content},
@@ -238,7 +223,7 @@ def run():
     print("=" * 60)
 
     if not FT_CLIENT_ID or not FT_CLIENT_SECRET:
-        print("❌ FT_CLIENT_ID ou FT_CLIENT_SECRET manquant dans les secrets.")
+        print("❌ FT_CLIENT_ID ou FT_CLIENT_SECRET manquant.")
         return
 
     token         = get_token()
