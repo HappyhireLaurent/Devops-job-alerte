@@ -17,7 +17,7 @@ FT_TOKEN_URL = (
     "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
     "?realm=%2Fpartenaire"
 )
-FT_SEARCH_URL = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
+FT_SEARCH_URL = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres"
 
 # Mots-clés recherchés (envoyés un par un à l'API)
 SEARCH_QUERIES = [
@@ -68,7 +68,7 @@ def get_token() -> str:
             "grant_type":    "client_credentials",
             "client_id":     FT_CLIENT_ID,
             "client_secret": FT_CLIENT_SECRET,
-            "scope":         "api_offresdemploiv2",
+            "scope":         "api_offresdemploiv2 o2dsoffre",
         },
         timeout=15,
     )
