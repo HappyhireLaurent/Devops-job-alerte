@@ -190,11 +190,11 @@ def send_to_discord(jobs: list[dict], total_raw: int):
         requests.post(DISCORD_WEBHOOK, json={"content": msg})
         return
 
-    output    = StringIO()
-    writer    = csv.DictWriter(output, fieldnames=["Entreprise", "Lien URL"])
-    writer.writeheader()
-    writer.writerows(jobs)
-    csv_bytes = output.getvalue().encode("utf-8-sig")
+    output = StringIO()
+writer = csv.DictWriter(output, fieldnames=["Entreprise", "Lien URL"], delimiter=";")
+writer.writeheader()
+writer.writerows(jobs)
+csv_bytes = ("sep=;\n" + output.getvalue()).encode("utf-8-sig")
 
     filename = f"veille_devops_{datetime.now().strftime('%Y-%m-%d')}.csv"
     content  = (
